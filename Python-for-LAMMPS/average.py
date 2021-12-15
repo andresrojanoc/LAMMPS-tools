@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG,format = FORMAT)
 """
 Leave the following line uncommented to avoid Info. messages during the run
 """
-#logging.disable(logging.CRITICAL)
+logging.disable(logging.CRITICAL)
 
 class Profile:
     def __init__(self,*args):
