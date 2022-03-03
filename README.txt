@@ -4,4 +4,4 @@
 Scripts to handle LAMMPS output files
 
 #coulomb_smooth_potential:
-Scripts to perfom an additional type of Coulomb potential that allows the computation of the Coulomb interaction using a smooth truncation in LAMMPS
+Scripts to perfom an additional type of potential that allows the computation of the Coulomb interaction using a smooth truncation in LAMMPS
