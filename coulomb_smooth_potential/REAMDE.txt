@@ -1,14 +1,53 @@
-#C++ Scripts to perfom an additional type of Coulomb potential in LAMMPS
-#This new potential allows the computation of the Coulomb interaction using a smooth truncation
+## Scripts to perfom an additional type of Coulomb potential in LAMMPS
+## This new potential allows the computation of the Coulomb interaction using a smooth truncation
 
-smooth: folder with the files to copy/replace in the LAMMPS' src
+smooth: Directory with the scripts to compile LAMMPS with the Coulomb interaction using a smooth truncation (coul/smooth)
+example: Directory with an example of an input file that employs this potential and the corresponding configuration file
 
-#Ussage:
+## Ussage:
 
-copy the content of the smooth folder in the LAMMPS src
-compile LAMMPS
-use coul/smooth with your desired cutoff radius
+# Extract the downloaded tarball (https://www.lammps.org/download.html) in the desired directory
 
-Note:
+tar -xvzf lammps-stable.tar.gz.
+
+# Load the module (if necessary)
+
+module load iomkl
+
+# Change directory to the STUBS directory in the src
+
+cd lammps/src/STUBS
+
+# Perform the make command
+
+make
+
+# Go back to the src
+
+cd ../
+(check with pwd)
+
+# Clean all possible residues (perhaps this is not necessary when a new LAMMPS is compiled)
+
+make clean-all
+
+# Include the desired LAMMPS' modules (e.g., molecule, kspace, rigid)
+
+make yes-molecule
+
+# Copy the content of the smooth folder (i.e., Makefile.list, pair_coul_smooth.cpp, pair_coul_smooth.h) to the /src/
+
+cp ../../smooth/* .
+(check the correct path where you saved the smooth directory)
+
+#Compile LAMMPS
+
+make mpi (paralel)
+make serial (serial)
+
+Notes:
+
+The cutoff radius is set on the selected units
+See in.smooth in the example directory for the implementation
 This potential corresponds to that explained in Walther et al. (2001) J. Phys. Chem. B
 DOI: 10.1021/jp011344u
