@@ -1,0 +1,14 @@
+#C++ Scripts to perfom an additional type of Coulomb potential in LAMMPS
+#This new potential allows the computation of the Coulomb interaction using a smooth truncation
+
+smooth: folder with the files to copy/replace in the LAMMPS' src
+
+#Ussage:
+
+copy the content of the smooth folder in the LAMMPS src
+compile LAMMPS
+use coul/smooth with your desired cutoff radius
+
+Note:
+This potential corresponds to that explained in Walther et al. (2001) J. Phys. Chem. B
+DOI: 10.1021/jp011344u
