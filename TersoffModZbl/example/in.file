@@ -1,0 +1,16 @@
+#LAMMPS input script that evaluates a system's energy without relaxing
+
+units metal
+atom_style atomic
+
+boundary m m m
+read_data diatom.dat
+
+pair_style  tersoff/mod/zbl
+pair_coeff      * * Si.tersoff.mod.zbl Si
+mass 1 28.085
+
+thermo_style custom step pe
+thermo_modify format float %.13e
+
+run 0

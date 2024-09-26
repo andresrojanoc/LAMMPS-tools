@@ -5,3 +5,6 @@ Scripts to handle LAMMPS output files
 
 ## coulomb_smooth_potential:
 Scripts to perfom an additional type of potential that allows the computation of the Coulomb interaction using a smooth truncation in LAMMPS
+
+## TersoffModZbl:
+Scripts to perfom an additional type of potential that allows the computation of the Modified Tersoff potential joined to the ZBL potential in LAMMPS
