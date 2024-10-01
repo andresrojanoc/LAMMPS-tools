@@ -1,0 +1,75 @@
+#!/bin/bash
+# Cutoff temperature example
+
+units           metal
+
+atom_style      atomic
+boundary        p p p
+
+# Configuration
+read_data conf.data
+
+reset_timestep 0
+
+pair_style      tersoff/mod
+pair_coeff      * * Si.tersoff.mod Si
+
+group silicon type 1
+
+region 1 block 0 135.775 0 135.775 0 5.431
+region 2 block 0 135.775 0 135.775 130.344 135.775
+region 3 block 0 5.431 0 135.775 0 135.775
+region 4 block 130.344 135.775 0 135.775 0 135.775
+region 5 block 0 135.775 0 5.431 0 135.775
+region 6 block 0 135.775 130.344 135.775 0 135.775
+
+group r1 region 1
+group r2 region 2
+group r3 region 3
+group r4 region 4
+group r5 region 5
+group r6 region 6
+
+group boundaries union r1 r2 r3 r4 r5 r6
+
+#Threshold velocity
+variable v_0 equal 58.4613
+
+#Ionic grid
+compute Grid all chunk/atom bin/3d x lower 13.5775 y lower 13.5775 z lower 13.5775
+
+#Standard temperature
+compute CIT all temp/chunk Grid temp
+fix CIT all ave/time 1 1 100 c_CIT[1] file CIT.out mode vector
+
+#Cutoff temperature
+compute CIT_cut all temp_vcut/chunk Grid temp vcut ${v_0}
+fix CIT_cut all ave/time 1 1 100 c_CIT_cut[1] file CIT_cut.out mode vector
+
+fix 2TMD all ttm 342785 1.2470e-5 0.087614 0.005365 29.5917 47.5679 ${v_0} 10 10 10 infile Tinit set 300
+
+#Projectile
+variable PKA equal 1
+variable eV equal ${PKA}*1000*1.602176634e-19
+variable mass equal 28.085*0.001*1.66053906660e-24
+variable 2eVmass equal (2*${eV})/${mass}
+variable vmagnitude equal 0.01*sqrt(${2eVmass})
+variable vmagnitude equal ${vmagnitude}*sqrt(1/3)
+group fast-moving  id 62500
+velocity fast-moving set ${vmagnitude} ${vmagnitude} ${vmagnitude}
+compute proj_KE fast-moving ke
+
+thermo_style custom step time dt temp c_proj_KE
+thermo 100
+
+dump 1 all custom 100 dump.lammpstrj id type x y z vx vy vz
+dump_modify 1 sort id
+
+timestep 1.0e-4
+fix 1 all nve
+fix 2 boundaries langevin 300 300 0.1 699483
+fix 3 all dt/reset 1 NULL 1.0e-3 0.1
+neighbor        1.0 bin
+neigh_modify    every 1 delay 0 check yes
+
+run 10000
