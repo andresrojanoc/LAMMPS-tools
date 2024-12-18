@@ -52,7 +52,7 @@ Include the desired LAMMPS' modules (e.g., molecule, kspace, rigid)
 make yes-molecule
 ```
 
-Copy the content of the smooth folder (i.e., Makefile.list, pair_coul_smooth.cpp, pair_coul_smooth.h) to the /src/ (check the correct path where you saved the smooth directory)
+Copy the content of the smooth folder (i.e., pair_coul_smooth.cpp, pair_coul_smooth.h) to the /src/ (check the correct path where you saved the smooth directory)
 
 ```
 cp ../../smooth/* .
