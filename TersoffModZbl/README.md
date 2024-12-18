@@ -52,7 +52,7 @@ Include the desired LAMMPS' modules (e.g., MANYBODY)
 make yes-manybody
 ```
 
-Copy the content of the pair folder (i.e., Makefile.list, pair_tersoff_mod_zbl.cpp, pair_tersoff_mod_zbl.h) to the /src/ (check the correct path where you saved the smooth directory)
+Copy the content of the pair folder (i.e., pair_tersoff_mod_zbl.cpp, pair_tersoff_mod_zbl.h) to the /src/ (check the correct path where you saved the smooth directory)
 
 ```
 cp ../../pair/* .
