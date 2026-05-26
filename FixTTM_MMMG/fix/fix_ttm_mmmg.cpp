@@ -49,13 +49,14 @@ FixTTMMMMG::FixTTMMMMG(LAMMPS *lmp, int narg, char **arg)
                              // class (FixTTM), and avoid keyword arguments.
   // Intializing custom flags
   cutoff_active = false;
+  offset_active = false;
   cetable_active = false;
   set_active = infile_active = false;
   tinit = 0.0;
   average_electronic_temperature = 0.0;
 
   // Parsing all keywords,  standard (set, infile, outfile) and custom (cutoff,
-  // table).
+  // offset, table).
   int iarg = 13;
   while (iarg < narg) {
     if (strcmp(arg[iarg], "set") == 0) {
@@ -83,6 +84,12 @@ FixTTMMMMG::FixTTMMMMG(LAMMPS *lmp, int narg, char **arg)
         error->all(FLERR, "Illegal fix ttm_mmmg command");
       cutoff_active = true;
       iarg += 1;
+    } else if (strcmp(arg[iarg], "offset") == 0) {
+      if (iarg + 2 > narg)
+        error->all(FLERR, "Illegal fix ttm_mmmg command");
+      offset_active = true;
+      time_offset = utils::numeric(FLERR, arg[iarg + 1], false, lmp);
+      iarg += 2;
     } else if (strcmp(arg[iarg], "table") == 0) {
       if (iarg + 2 > narg)
         error->all(FLERR, "Illegal fix ttm_mmmg command");
@@ -113,6 +120,16 @@ FixTTMMMMG::FixTTMMMMG(LAMMPS *lmp, int narg, char **arg)
                           "in the file must be > 0.0");
     }
   }
+
+  if (offset_active) {
+    if (time_offset < 0)
+      error->all(FLERR, "Fix ttm_mmmg offset must be >= 0");
+  }
+
+  if (offset_active && cutoff_active)
+    error->all(
+        FLERR,
+        "Fix ttm_mmmg cannot have cutoff and offset active at the same time");
 
   if (electronic_density <= 0.0)
     error->all(FLERR, "Fix ttm_mmmg electronic_density must be > 0.0");
@@ -153,6 +170,20 @@ void FixTTMMMMG::post_force(int /*vflag*/) {
   double dyinv = nygrid / domain->yprd;
   double dzinv = nzgrid / domain->zprd;
 
+  update->update_time();
+  double current_time = update->atime; // This is to look for my current time.
+  gamma_offset = (offset_active && (current_time < time_offset)) ? 0 : 1;
+
+  /*
+  // Debug: Evaluates current simulation time
+
+  if (comm->me == 0) {
+    utils::logmesg(
+        lmp, fmt::format("DEBUG: Time = {}, time_offset {}, gamma_offset = {}
+  \n", update->atime, time_offset, gamma_offset));
+  }
+  */
+
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
       ix = static_cast<int>((x[i][0] - boxlo[0]) * dxinv + shift) - OFFSET;
@@ -177,23 +208,26 @@ void FixTTMMMMG::post_force(int /*vflag*/) {
       gamma1 = gfactor1[type[i]];
       double vsq = v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2];
 
-      g_unit = 1.0;
+      gamma_cutoff = 1.0;
 
       // Evaluates whether the cutoff approach applies in the computation.
-      if (cutoff_active) {
-        if (vsq > v_0_sq) {
+      if (vsq > v_0_sq) {
+        if (cutoff_active) {
           gamma1 *=
               (gamma_s / gamma_p); // Avoids gamma_p for fast-moving atoms.
-          g_unit = 0;
+          gamma_cutoff = 0;
+        } else {
+          gamma1 *= ((gamma_p * gamma_offset) + gamma_s) /
+                    gamma_p; // Standard ttm approach.
         }
-      } else {
-        if (vsq > v_0_sq)
-          gamma1 *= (gamma_p + gamma_s) / gamma_p; // Standard ttm approach.
+      } else {                  // vsq <= v_0_sq
+        gamma1 *= gamma_offset; // This decouples gamma_p for slow-moving atoms
+                                // when time_offset applies.
       }
 
-      gamma2 = gfactor2[type[i]] * tsqrt *
-               g_unit; // Modifies gamma2 to disable stochastic forces for
-                       // fast-moving atoms.
+      gamma2 = gfactor2[type[i]] * tsqrt * gamma_cutoff * gamma_offset;
+      // Modifies gamma2 to disable stochastic forces for fast-moving atoms and
+      // at simulation times before time_offset.
 
       flangevin[i][0] = gamma1 * v[i][0] + gamma2 * (random->uniform() - 0.5);
       flangevin[i][1] = gamma1 * v[i][1] + gamma2 * (random->uniform() - 0.5);
@@ -353,6 +387,8 @@ void FixTTMMMMG::end_of_step() {
   }
 
   // output of grid electron temperatures to file
+
+  // update->update_time();
 
   if (!outfile.empty() && (update->ntimestep % outevery == 0))
     write_electron_temperatures(

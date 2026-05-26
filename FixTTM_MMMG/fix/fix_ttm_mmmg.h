@@ -37,10 +37,11 @@ public:
 
 protected:
   // --- MMMG Specific Flags (bool) ---
-  bool cutoff_active, cetable_active;
+  bool cutoff_active, offset_active, cetable_active;
   bool set_active, infile_active;
 
-  double g_unit;
+  double time_offset;
+  double gamma_cutoff, gamma_offset;
   double average_electronic_temperature;
   double variable_electronic_specific_heat;
 
