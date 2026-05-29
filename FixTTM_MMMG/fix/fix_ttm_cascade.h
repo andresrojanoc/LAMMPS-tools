@@ -76,9 +76,34 @@ private:
   int nxlo_out_previous, nylo_out_previous, nzlo_out_previous;
 
 protected:
+  bool cutoff_active, offset_active, cetable_active, ketable_active;
+  bool set_active, infile_active;
+  double time_offset;
+  double gamma_cutoff, gamma_offset;
+  double average_electronic_temperature;
+  double variable_electronic_specific_heat,
+      variable_electronic_thermal_conductivity;
+
+  // Tabular Specific Heat data
+  std::vector<double> temp_ce_values;
+  std::vector<double> ce_values;
+  std::vector<double> dtemp_ce_values;
+  std::vector<double> dce_values;
+
+  // Tabular Thermal Conductivity data
+  std::vector<double> temp_ke_values;
+  std::vector<double> ke_values;
+  std::vector<double> dtemp_ke_values;
+  std::vector<double> dke_values;
+
   void allocate_grid() override;
   void deallocate_grid() override;
   void read_electron_temperatures(const std::string &) override;
+
+  // Internal Logic Methods
+  void tableinterpreader(const std::string &filename,
+                         const std::string &keyword);
+  double linearinterpolation(double temp, const std::string &keyword);
 };
 
 } // namespace LAMMPS_NS

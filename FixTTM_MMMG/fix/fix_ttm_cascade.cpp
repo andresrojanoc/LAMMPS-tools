@@ -26,6 +26,7 @@
 #include "grid3d.h"
 #include "memory.h"
 #include "neighbor.h"
+#include "potential_file_reader.h"
 #include "random_mars.h"
 #include "safe_pointers.h"
 #include "tokenizer.h"
@@ -48,7 +49,7 @@ static constexpr int OFFSET = 16384;
 /* ---------------------------------------------------------------------- */
 
 FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg) :
-  FixTTMGrid(lmp, narg, arg)
+  FixTTMGrid(lmp, 13, arg) // 13 is to pass only 13 arguments to the parent class (FixTTMGrid and FixTTM), and avoid keyword arguments.
 {
   pergrid_flag = 1;
   pergrid_freq = 1;
@@ -777,4 +778,91 @@ double FixTTMCascade::memory_usage()
   bytes += (double) 3 * atom->nmax * sizeof(double);
   bytes += (double) 3 * ngridout * sizeof(double);
   return bytes;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixTTMCascade::tableinterpreader(const std::string &filename,
+                                   const std::string &keyword) {
+
+  std::vector<double> &temp_vals =
+      (keyword == "ce") ? temp_ce_values : temp_ke_values;
+  std::vector<double> &dtemp_vals =
+      (keyword == "ce") ? dtemp_ce_values : dtemp_ke_values;
+  std::vector<double> &y_vals = (keyword == "ce") ? ce_values : ke_values;
+  std::vector<double> &dy_vals = (keyword == "ce") ? dce_values : dke_values;
+
+  if (comm->me == 0) {
+    std::string table_label = (keyword == "ce") ? "specific heat table"
+                                                : "thermal conductivity table";
+    PotentialFileReader reader(lmp, filename, table_label);
+    while (char *line = reader.next_line()) {
+      double temp_value, y_value;
+      if (sscanf(line, "%lg %lg", &temp_value, &y_value) == 2) {
+        temp_vals.push_back(temp_value);
+        y_vals.push_back(y_value);
+      }
+    }
+
+    // Pre-calculate deltas
+    int nsize_table = static_cast<int>(temp_vals.size());
+    dtemp_vals.resize(nsize_table);
+    dy_vals.resize(nsize_table);
+    for (int i = 0; i < nsize_table - 1; i++) {
+      dtemp_vals[i] = temp_vals[i + 1] - temp_vals[i];
+      dy_vals[i] = y_vals[i + 1] - y_vals[i];
+    }
+  }
+
+  int nsize_table = static_cast<int>(temp_vals.size());
+  MPI_Bcast(&nsize_table, 1, MPI_INT, 0, world);
+
+  if (comm->me != 0) {
+    temp_vals.resize(nsize_table);
+    y_vals.resize(nsize_table);
+    dtemp_vals.resize(nsize_table);
+    dy_vals.resize(nsize_table);
+  }
+
+  MPI_Bcast(temp_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+  MPI_Bcast(y_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+  MPI_Bcast(dtemp_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+  MPI_Bcast(dy_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+}
+
+/* ---------------------------------------------------------------------- */
+
+double FixTTMCascade::linearinterpolation(double temp, const std::string &keyword) {
+
+  const std::vector<double> &temp_vals =
+      (keyword == "ce") ? temp_ce_values : temp_ke_values;
+  const std::vector<double> &dtemp_vals =
+      (keyword == "ce") ? dtemp_ce_values : dtemp_ke_values;
+  const std::vector<double> &y_vals = (keyword == "ce") ? ce_values : ke_values;
+  const std::vector<double> &dy_vals =
+      (keyword == "ce") ? dce_values : dke_values;
+
+  if (temp_vals.empty())
+    error->one(FLERR, "The table {} is empty", keyword);
+
+  int lo = 0;
+  int hi = static_cast<int>(temp_vals.size()) - 1;
+
+  if (temp <= temp_vals[lo])
+    // Exact match or lower than lower bound
+    return y_vals[lo];
+  if (temp >= temp_vals[hi])
+    // Exact match or higher than upper bound
+    return y_vals[hi];
+
+  while (hi - lo > 1) {
+    int mid = (lo + hi) / 2;
+    if (temp < temp_vals[mid])
+      hi = mid;
+    else
+      lo = mid;
+  }
+
+  // Use pre-calculated deltas
+  return y_vals[lo] + (temp - temp_vals[lo]) * (dy_vals[lo] / dtemp_vals[lo]);
 }
