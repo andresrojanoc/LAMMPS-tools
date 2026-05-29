@@ -24,7 +24,7 @@ FixStyle(ttm/cascade,FixTTMCascade);
 
 namespace LAMMPS_NS {
 
-class FixTTMCascade : public FixTTMGrid {
+class FixTTMCascade : public FixTTM {
 public:
   FixTTMCascade(class LAMMPS *, int, char **);
   ~FixTTMCascade() override;
