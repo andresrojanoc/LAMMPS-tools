@@ -489,6 +489,7 @@ void FixTTMMMMG::read_electron_temperatures(const std::string &filename) {
   MPI_Bcast(&T_electron[0][0][0], ngridtotal, MPI_DOUBLE, 0, world);
   MPI_Bcast(&average_electronic_temperature, 1, MPI_DOUBLE, 0, world);
   MPI_Bcast(&electronic_specific_heat, 1, MPI_DOUBLE, 0, world);
+  MPI_Bcast(&electronic_thermal_conductivity, 1, MPI_DOUBLE, 0, world);
 }
 
 /* ---------------------------------------------------------------------- */
