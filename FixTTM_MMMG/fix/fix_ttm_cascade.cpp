@@ -997,6 +997,9 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
       }
     }
 
+    // Check if interpolation is valid
+    if (temp_vals.size() < 2) error->all(FLERR, "The {} table has less than 2 rows, interpolation is invalid", keyword);
+
     // Pre-calculate deltas
     int nsize_table = static_cast<int>(temp_vals.size());
     dtemp_vals.resize(nsize_table);
@@ -1004,6 +1007,7 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
     for (int i = 0; i < nsize_table - 1; i++) {
       dtemp_vals[i] = temp_vals[i + 1] - temp_vals[i];
       dy_vals[i] = y_vals[i + 1] - y_vals[i];
+      if (dtemp_vals[i] <= 0.0) error->all(FLERR, "Two consecutive values in the {} table are the same or not increasing", keyword);
     }
   }
 
