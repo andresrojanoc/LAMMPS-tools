@@ -1,5 +1,5 @@
 #!/bin/bash
-# FixTTM_MMMG input file
+# FixTTMMMMG/FixTTMCascade input file
 
 units           metal
 
@@ -45,21 +45,35 @@ fix PrintGrid all ave/time 1 1 ${out} c_CIT[*] file CIT.out mode vector
 
 variable C_e equal 1.9214123919366002e-07 #300K in Ce_W.dat https://compmat.org/electron-phonon-coupling/
 variable rho_e equal 1 #Defined in the Ce
-variable kappa_e equal 0.1086108 #https://dx.doi.org/10.1088/1361-648X/ad4941
+variable kappa_e equal 1.08398327e-01 # Defined as D_e * rho_e * C_e; 
+#D_e is the thermal diffusion coefficient: 564203.959915 (A^2/ps)
 variable gamma_p equal 0.2666*183.84 #doi: 10.1088/0953-8984/27/13/135401
 variable gamma_s equal 1.1*183.84 #SRIM
 variable Nx equal ${gridpoints}
 
-#### TTM approach ######
 
-#Fix including the cutoff approach and reading Ce from Ce_W.dat file
+#### ttm ######
+
 #fix 2TMD all ttm 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 outfile ${out} CET.out # original ttm
-fix 2TMD all ttm_mmmg 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 outfile ${out} CET.out # modified ttm
+
+#### ttm_mmmg ######
+
+fix 2TMD all ttm_mmmg 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 outfile ${out} CET.out # modified
 #fix 2TMD all ttm_mmmg 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 outfile ${out} CET.out cetab Ce_W.txt # tabulated ce
 #fix 2TMD all ttm_mmmg 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 outfile ${out} CET.out ketab ke_W.txt # tabulated ke
 #fix 2TMD all ttm_mmmg 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 outfile ${out} CET.out cutoff # cutoff approach
 #fix 2TMD all ttm_mmmg 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 outfile ${out} CET.out offset 0.0004 # offset approach
-#You can mix: cetab, ketab and cutoff; or cetab, ketab and offset along with the standard ttm keywords in any order
+#Note: you can mix cetab, ketab and cutoff; or cetab, ketab and offset along with the standard ttm keywords in any order
+
+#### ttm/cascade ######
+
+fix 2TMD all ttm/cascade 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 # modified
+#fix 2TMD all ttm/cascade 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 cetab Ce_W.txt # tabulated ce
+#fix 2TMD all ttm/cascade 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 ketab ke_W.txt # tabulated ke
+#fix 2TMD all ttm/cascade 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 cutoff # cutoff approach
+#fix 2TMD all ttm/cascade 342785 ${C_e} ${rho_e} ${kappa_e} ${gamma_p} ${gamma_s} ${v_0} ${Nx} ${Nx} ${Nx} set 300 offset 0.0004 # offset approach
+#Note: you can mix cetab, ketab and cutoff; or cetab, ketab and offset along with the set and infile keywords
+
 
 #Projectile
 variable PKA equal 30 # in keV units
