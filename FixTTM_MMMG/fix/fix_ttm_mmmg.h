@@ -37,26 +37,33 @@ public:
 
 protected:
   // --- MMMG Specific Flags (bool) ---
-  bool cutoff_active, offset_active, cetable_active;
+  bool cutoff_active, offset_active, cetable_active, ketable_active;
   bool set_active, infile_active;
 
   double time_offset;
   double gamma_cutoff, gamma_offset;
   double average_electronic_temperature;
-  double variable_electronic_specific_heat;
+  double variable_electronic_specific_heat,
+      variable_electronic_thermal_conductivity;
 
   void read_electron_temperatures(const std::string &filename) override;
 
   // Tabular Specific Heat data
-  std::vector<double> Temp_Ce_values;
-  std::vector<double> Ce_values;
-  std::vector<double> dTemp_Ce_values;
-  std::vector<double> dCe_values;
+  std::vector<double> temp_ce_values;
+  std::vector<double> ce_values;
+  std::vector<double> dtemp_ce_values;
+  std::vector<double> dce_values;
+
+  // Tabular Thermal Conductivity data
+  std::vector<double> temp_ke_values;
+  std::vector<double> ke_values;
+  std::vector<double> dtemp_ke_values;
+  std::vector<double> dke_values;
 
   // Internal Logic Methods
   void TableInterpReader(const std::string &filename,
                          const std::string &keyword);
-  double LinearInterpolate(double Temp_Ce, const std::string &keyword);
+  double LinearInterpolate(double temp, const std::string &keyword);
 };
 
 } // namespace LAMMPS_NS

@@ -51,12 +51,13 @@ FixTTMMMMG::FixTTMMMMG(LAMMPS *lmp, int narg, char **arg)
   cutoff_active = false;
   offset_active = false;
   cetable_active = false;
+  ketable_active = false;
   set_active = infile_active = false;
   tinit = 0.0;
   average_electronic_temperature = 0.0;
 
   // Parsing all keywords,  standard (set, infile, outfile) and custom (cutoff,
-  // offset, table).
+  // offset, cetab, ketab).
   int iarg = 13;
   while (iarg < narg) {
     if (strcmp(arg[iarg], "set") == 0) {
@@ -90,11 +91,17 @@ FixTTMMMMG::FixTTMMMMG(LAMMPS *lmp, int narg, char **arg)
       offset_active = true;
       time_offset = utils::numeric(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
-    } else if (strcmp(arg[iarg], "table") == 0) {
+    } else if (strcmp(arg[iarg], "cetab") == 0) {
       if (iarg + 2 > narg)
         error->all(FLERR, "Illegal fix ttm_mmmg command");
       cetable_active = true;
-      TableInterpReader(arg[iarg + 1], "Ce");
+      TableInterpReader(arg[iarg + 1], "ce");
+      iarg += 2;
+    } else if (strcmp(arg[iarg], "ketab") == 0) {
+      if (iarg + 2 > narg)
+        error->all(FLERR, "Illegal fix ttm_mmmg command");
+      ketable_active = true;
+      TableInterpReader(arg[iarg + 1], "ke");
       iarg += 2;
     } else {
       error->all(FLERR, "Illegal fix ttm_mmmg command");
@@ -104,7 +111,13 @@ FixTTMMMMG::FixTTMMMMG(LAMMPS *lmp, int narg, char **arg)
   // If the cetable is activated, set the electronic_specific_heat value.
   if (cetable_active && set_active) {
     electronic_specific_heat =
-        LinearInterpolate(tinit, "Ce"); // To check stability_criterion
+        LinearInterpolate(tinit, "ce"); // To check stability_criterion
+  }
+
+  // If the ketable is activated, set the electronic_thermal_conductivity value.
+  if (ketable_active && set_active) {
+    electronic_thermal_conductivity =
+        LinearInterpolate(tinit, "ke"); // To check stability_criterion
   }
 
   // error check
@@ -114,10 +127,18 @@ FixTTMMMMG::FixTTMMMMG(LAMMPS *lmp, int narg, char **arg)
     error->all(FLERR, "Fix ttm_mmmg electronic_specific_heat must be > 0.0");
 
   if (cetable_active) {
-    for (int i = 0; i < Ce_values.size(); i++) {
-      if (Ce_values[i] <= 0.0)
+    for (int i = 0; i < ce_values.size(); i++) {
+      if (ce_values[i] <= 0.0)
         error->all(FLERR, "Fix ttm_mmmg all electronic_specific_heat entries "
                           "in the file must be > 0.0");
+    }
+  }
+
+  if (ketable_active) {
+    for (int i = 0; i < ke_values.size(); i++) {
+      if (ke_values[i] <= 0.0)
+        error->all(FLERR, "Fix ttm_mmmg all electronic_thermal_conductivity "
+                          "entries in the file must be > 0.0");
     }
   }
 
@@ -171,7 +192,7 @@ void FixTTMMMMG::post_force(int /*vflag*/) {
   double dzinv = nzgrid / domain->zprd;
 
   update->update_time();
-  double current_time = update->atime; // This is to look for my current time.
+  double current_time = update->atime; // This is to look for the current time.
   gamma_offset = (offset_active && (current_time < time_offset)) ? 0 : 1;
 
   /*
@@ -347,27 +368,32 @@ void FixTTMMMMG::end_of_step() {
             zleft = nzgrid - 1;
 
           variable_electronic_specific_heat =
-              cetable_active ? LinearInterpolate(T_electron[iz][iy][ix], "Ce")
+              cetable_active ? LinearInterpolate(T_electron[iz][iy][ix], "ce")
                              : electronic_specific_heat;
 
+          variable_electronic_thermal_conductivity =
+              ketable_active ? LinearInterpolate(T_electron[iz][iy][ix], "ke")
+                             : electronic_thermal_conductivity;
+
           /*
-          //Debug: Evaluates the interpolation of the
+          // Debug: Evaluates the interpolation of the
           variable_electronic_specific_heat:
 
-          if (comm->me == 0 &&
-          update->ntimestep % 10 == 0 && ix == 0 && iy == 0 && iz == 0) {
-            utils::logmesg(lmp,
-                           fmt::format("DEBUG: Step {} | T={} K | Ce={}\n",
-                                       update->ntimestep, T_electron[0][0][0],
-                                       variable_electronic_specific_heat));
-          }
+            if (comm->me == 0 && update->ntimestep % 10 == 0 && ix == 0 &&
+                iy == 0 && iz == 0) {
+              utils::logmesg(
+                  lmp, fmt::format("DEBUG: Step {} | T={} K | ce={} | ke={}\n",
+                                   update->ntimestep, T_electron[0][0][0],
+                                   variable_electronic_specific_heat,
+                                   variable_electronic_thermal_conductivity));
+            }
           */
 
           T_electron[iz][iy][ix] =
               T_electron_old[iz][iy][ix] +
               inner_dt /
                   (variable_electronic_specific_heat * electronic_density) *
-                  (electronic_thermal_conductivity *
+                  (variable_electronic_thermal_conductivity *
 
                        ((T_electron_old[iz][iy][xright] +
                          T_electron_old[iz][iy][xleft] -
@@ -387,8 +413,6 @@ void FixTTMMMMG::end_of_step() {
   }
 
   // output of grid electron temperatures to file
-
-  // update->update_time();
 
   if (!outfile.empty() && (update->ntimestep % outevery == 0))
     write_electron_temperatures(
@@ -455,81 +479,17 @@ void FixTTMMMMG::read_electron_temperatures(const std::string &filename) {
 
     if (cetable_active)
       electronic_specific_heat = LinearInterpolate(
-          average_electronic_temperature, "Ce"); // To check stability_criterion
+          average_electronic_temperature, "ce"); // To check stability_criterion
+
+    if (ketable_active)
+      electronic_thermal_conductivity = LinearInterpolate(
+          average_electronic_temperature, "ke"); // To check stability_criterion
   }
 
   MPI_Bcast(&T_electron[0][0][0], ngridtotal, MPI_DOUBLE, 0, world);
   MPI_Bcast(&average_electronic_temperature, 1, MPI_DOUBLE, 0, world);
   MPI_Bcast(&electronic_specific_heat, 1, MPI_DOUBLE, 0, world);
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixTTMMMMG::TableInterpReader(const std::string &filename,
-                                   const std::string &keyword) {
-  if (comm->me == 0) {
-    PotentialFileReader reader(lmp, filename, "specific heat table");
-    while (char *line = reader.next_line()) {
-      double Temp_Ce_value, Ce_value;
-      if (sscanf(line, "%lg %lg", &Temp_Ce_value, &Ce_value) == 2) {
-        Temp_Ce_values.push_back(Temp_Ce_value);
-        Ce_values.push_back(Ce_value);
-      }
-    }
-
-    // Pre-calculate deltas (Recovered Article Logic)
-    int nsize_cetable = static_cast<int>(Temp_Ce_values.size());
-    dTemp_Ce_values.resize(nsize_cetable);
-    dCe_values.resize(nsize_cetable);
-    for (int i = 0; i < nsize_cetable - 1; i++) {
-      dTemp_Ce_values[i] = Temp_Ce_values[i + 1] - Temp_Ce_values[i];
-      dCe_values[i] = Ce_values[i + 1] - Ce_values[i];
-    }
-  }
-
-  int nsize_cetable = static_cast<int>(Temp_Ce_values.size());
-  MPI_Bcast(&nsize_cetable, 1, MPI_INT, 0, world);
-
-  if (comm->me != 0) {
-    Temp_Ce_values.resize(nsize_cetable);
-    Ce_values.resize(nsize_cetable);
-    dTemp_Ce_values.resize(nsize_cetable);
-    dCe_values.resize(nsize_cetable);
-  }
-  MPI_Bcast(Temp_Ce_values.data(), nsize_cetable, MPI_DOUBLE, 0, world);
-  MPI_Bcast(Ce_values.data(), nsize_cetable, MPI_DOUBLE, 0, world);
-  MPI_Bcast(dTemp_Ce_values.data(), nsize_cetable, MPI_DOUBLE, 0, world);
-  MPI_Bcast(dCe_values.data(), nsize_cetable, MPI_DOUBLE, 0, world);
-}
-
-/* ---------------------------------------------------------------------- */
-
-double FixTTMMMMG::LinearInterpolate(double Temp_Ce,
-                                     const std::string &keyword) {
-  if (Temp_Ce_values.empty())
-    error->one(FLERR, "The table {} is empty", keyword);
-
-  int lo = 0;
-  int hi = static_cast<int>(Temp_Ce_values.size()) - 1;
-
-  if (Temp_Ce <= Temp_Ce_values[lo])
-    // Exact match or lower than lower bound
-    return Ce_values[lo];
-  if (Temp_Ce >= Temp_Ce_values[hi])
-    // Exact match or higher than upper bound
-    return Ce_values[hi];
-
-  while (hi - lo > 1) {
-    int mid = (lo + hi) / 2;
-    if (Temp_Ce < Temp_Ce_values[mid])
-      hi = mid;
-    else
-      lo = mid;
-  }
-
-  // Use pre-calculated deltas (Recovered Article Logic)
-  return Ce_values[lo] + (Temp_Ce - Temp_Ce_values[lo]) *
-                             (dCe_values[lo] / dTemp_Ce_values[lo]);
+  MPI_Bcast(&electronic_thermal_conductivity, 1, MPI_DOUBLE, 0, world);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -548,7 +508,7 @@ double FixTTMMMMG::compute_vector(int n) {
       for (int iy = 0; iy < nygrid; iy++) {
         for (int ix = 0; ix < nxgrid; ix++) {
           variable_electronic_specific_heat =
-              cetable_active ? LinearInterpolate(T_electron[iz][iy][ix], "Ce")
+              cetable_active ? LinearInterpolate(T_electron[iz][iy][ix], "ce")
                              : electronic_specific_heat;
           e_energy += T_electron[iz][iy][ix] *
                       variable_electronic_specific_heat * electronic_density *
@@ -565,4 +525,91 @@ double FixTTMMMMG::compute_vector(int n) {
   if (n == 1)
     return transfer_energy;
   return 0.0;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixTTMMMMG::TableInterpReader(const std::string &filename,
+                                   const std::string &keyword) {
+
+  std::vector<double> &temp_vals =
+      (keyword == "ce") ? temp_ce_values : temp_ke_values;
+  std::vector<double> &dtemp_vals =
+      (keyword == "ce") ? dtemp_ce_values : dtemp_ke_values;
+  std::vector<double> &y_vals = (keyword == "ce") ? ce_values : ke_values;
+  std::vector<double> &dy_vals = (keyword == "ce") ? dce_values : dke_values;
+
+  if (comm->me == 0) {
+    std::string table_label = (keyword == "ce") ? "specific heat table"
+                                                : "thermal conductivity table";
+    PotentialFileReader reader(lmp, filename, table_label);
+    while (char *line = reader.next_line()) {
+      double temp_value, y_value;
+      if (sscanf(line, "%lg %lg", &temp_value, &y_value) == 2) {
+        temp_vals.push_back(temp_value);
+        y_vals.push_back(y_value);
+      }
+    }
+
+    // Pre-calculate deltas
+    int nsize_table = static_cast<int>(temp_vals.size());
+    dtemp_vals.resize(nsize_table);
+    dy_vals.resize(nsize_table);
+    for (int i = 0; i < nsize_table - 1; i++) {
+      dtemp_vals[i] = temp_vals[i + 1] - temp_vals[i];
+      dy_vals[i] = y_vals[i + 1] - y_vals[i];
+    }
+  }
+
+  int nsize_table = static_cast<int>(temp_vals.size());
+  MPI_Bcast(&nsize_table, 1, MPI_INT, 0, world);
+
+  if (comm->me != 0) {
+    temp_vals.resize(nsize_table);
+    y_vals.resize(nsize_table);
+    dtemp_vals.resize(nsize_table);
+    dy_vals.resize(nsize_table);
+  }
+
+  MPI_Bcast(temp_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+  MPI_Bcast(y_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+  MPI_Bcast(dtemp_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+  MPI_Bcast(dy_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
+}
+
+/* ---------------------------------------------------------------------- */
+
+double FixTTMMMMG::LinearInterpolate(double temp, const std::string &keyword) {
+
+  const std::vector<double> &temp_vals =
+      (keyword == "ce") ? temp_ce_values : temp_ke_values;
+  const std::vector<double> &dtemp_vals =
+      (keyword == "ce") ? dtemp_ce_values : dtemp_ke_values;
+  const std::vector<double> &y_vals = (keyword == "ce") ? ce_values : ke_values;
+  const std::vector<double> &dy_vals =
+      (keyword == "ce") ? dce_values : dke_values;
+
+  if (temp_vals.empty())
+    error->one(FLERR, "The table {} is empty", keyword);
+
+  int lo = 0;
+  int hi = static_cast<int>(temp_vals.size()) - 1;
+
+  if (temp <= temp_vals[lo])
+    // Exact match or lower than lower bound
+    return y_vals[lo];
+  if (temp >= temp_vals[hi])
+    // Exact match or higher than upper bound
+    return y_vals[hi];
+
+  while (hi - lo > 1) {
+    int mid = (lo + hi) / 2;
+    if (temp < temp_vals[mid])
+      hi = mid;
+    else
+      lo = mid;
+  }
+
+  // Use pre-calculated deltas
+  return y_vals[lo] + (temp - temp_vals[lo]) * (dy_vals[lo] / dtemp_vals[lo]);
 }
