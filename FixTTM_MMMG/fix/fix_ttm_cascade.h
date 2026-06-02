@@ -87,6 +87,7 @@ protected:
   std::vector<double> ce_values;
   std::vector<double> dtemp_ce_values;
   std::vector<double> dce_values;
+  std::vector<double> ce_integral_values;
 
   // Tabular Thermal Conductivity data
   std::vector<double> temp_ke_values;
@@ -102,6 +103,7 @@ protected:
   void tableinterpreader(const std::string &filename,
                          const std::string &keyword);
   double linearinterpolation(double temp, const std::string &keyword);
+  double integrated_ce(double temp);
 };
 
 } // namespace LAMMPS_NS

@@ -940,12 +940,9 @@ double FixTTMCascade::compute_vector(int n) {
     for (iz = nzlo_in; iz <= nzhi_in; iz++)
       for (iy = nylo_in; iy <= nyhi_in; iy++)
         for (ix = nxlo_in; ix <= nxhi_in; ix++) {
-          variable_electronic_specific_heat =
-              cetable_active ? linearinterpolation(T_electron[iz][iy][ix], "ce")
-                             : electronic_specific_heat;
 
-          e_energy_me += 
-              T_electron[iz][iy][ix] * variable_electronic_specific_heat * electronic_density * volgrid;
+          e_energy_me += integrated_ce(T_electron[iz][iy][ix]) *
+                         electronic_density * volgrid;
           transfer_energy_me += net_energy_transfer[iz][iy][ix] * update->dt;
         }
 
@@ -985,6 +982,8 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
   std::vector<double> &y_vals = (keyword == "ce") ? ce_values : ke_values;
   std::vector<double> &dy_vals = (keyword == "ce") ? dce_values : dke_values;
 
+  bool table_flag = false;
+
   if (comm->me == 0) {
     std::string table_label = (keyword == "ce") ? "specific heat table"
                                                 : "thermal conductivity table";
@@ -997,19 +996,25 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
       }
     }
 
-    // Check if interpolation is valid
-    if (temp_vals.size() < 2) error->all(FLERR, "The {} table has less than 2 rows, interpolation is invalid", keyword);
-
     // Pre-calculate deltas
     int nsize_table = static_cast<int>(temp_vals.size());
     dtemp_vals.resize(nsize_table);
     dy_vals.resize(nsize_table);
+    if (keyword == "ce") {
+      ce_integral_values.resize(nsize_table);
+      ce_integral_values[0] = y_vals[0] * temp_vals[0];
+    }
     for (int i = 0; i < nsize_table - 1; i++) {
       dtemp_vals[i] = temp_vals[i + 1] - temp_vals[i];
       dy_vals[i] = y_vals[i + 1] - y_vals[i];
-      if (dtemp_vals[i] <= 0.0) error->all(FLERR, "Two consecutive values in the {} table are the same or not increasing", keyword);
+      if (keyword == "ce") {
+        // numerical integration
+        ce_integral_values[i + 1] = ce_integral_values[i] + 0.5 * (y_vals[i + 1] + y_vals[i]) * (temp_vals[i + 1] - temp_vals[i]);
+      }
+      if (temp_vals[i] >= temp_vals[i + 1]) table_flag = true;
     }
   }
+
 
   int nsize_table = static_cast<int>(temp_vals.size());
   MPI_Bcast(&nsize_table, 1, MPI_INT, 0, world);
@@ -1019,13 +1024,25 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
     y_vals.resize(nsize_table);
     dtemp_vals.resize(nsize_table);
     dy_vals.resize(nsize_table);
+    if (keyword == "ce")
+      ce_integral_values.resize(nsize_table);
   }
 
   MPI_Bcast(temp_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
   MPI_Bcast(y_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
   MPI_Bcast(dtemp_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
   MPI_Bcast(dy_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
-}
+  MPI_Bcast(&table_flag, 1, MPI_C_BOOL, 0, world);
+  if (keyword == "ce") MPI_Bcast(ce_integral_values.data(), nsize_table, MPI_DOUBLE, 0, world);
+
+  // error check
+
+  if (table_flag) error->all(FLERR, "Two consecutive values in the {} table are the same or not sorted", keyword);
+
+  if (temp_vals.size() < 2) error->all(FLERR, "The {} table has less than 2 rows, interpolation is invalid", keyword);
+
+
+  }
 
 /* ----------------------------------------------------------------------
    interpolates the specific heat and thermal conductivity values
@@ -1064,4 +1081,37 @@ double FixTTMCascade::linearinterpolation(double temp, const std::string &keywor
 
   // Use pre-calculated deltas
   return y_vals[lo] + (temp - temp_vals[lo]) * (dy_vals[lo] / dtemp_vals[lo]);
+}
+
+double FixTTMCascade::integrated_ce(double Te) {
+  if (!cetable_active) {
+    return electronic_specific_heat * Te;
+  }
+
+  int lo = 0;
+  int hi = static_cast<int>(ce_values.size()) - 1;
+  int mid;
+
+  if (Te <= temp_ce_values[lo])
+    // Exact match or lower than lower bound
+    return ce_values[lo] * Te;
+  if (Te >= temp_ce_values[hi])
+    // Exact match or higher than upper bound
+    return ce_integral_values[hi] + (ce_values[hi] * (Te - temp_ce_values[hi]));
+
+  // Look for fraction
+  while (hi - lo > 1) {
+    mid = (lo + hi) / 2;
+    if (Te < temp_ce_values[mid])
+      hi = mid;
+    else
+      lo = mid;
+  }
+
+  double Ce_interpolated =
+      ce_values[lo] +
+      (Te - temp_ce_values[lo]) * (dce_values[lo] / dtemp_ce_values[lo]);
+
+  return ce_integral_values[lo] +
+         0.5 * (ce_values[lo] + Ce_interpolated) * (Te - temp_ce_values[lo]);
 }
