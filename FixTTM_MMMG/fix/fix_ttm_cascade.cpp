@@ -337,6 +337,8 @@ void FixTTMCascade::end_of_step(){
   double dzinv = nzgrid/domain->zprd;
   double volgrid = 1.0 / (dxinv*dyinv*dzinv);
 
+  double variable_electronic_specific_heat;
+
   outflag = 0;
   memset(&net_energy_transfer[nzlo_out][nylo_out][nxlo_out],0,
          ngridout*sizeof(double));
@@ -389,13 +391,8 @@ void FixTTMCascade::end_of_step(){
       for (iy = nylo_in; iy <= nyhi_in; iy++)
         for (ix = nxlo_in; ix <= nxhi_in; ix++) {
           variable_electronic_specific_heat =
-              cetable_active ? linearinterpolation(T_electron[iz][iy][ix], "ce")
-                             : electronic_specific_heat;
-                             
-          variable_electronic_thermal_conductivity =
-              ketable_active ? linearinterpolation(T_electron[iz][iy][ix], "ke")
-                             : electronic_thermal_conductivity;
-
+              cetable_active ? linearinterpolation(T_electron_old[iz][iy][ix], "ce")
+                             : electronic_specific_heat;                             
           /*
           // Debug: Evaluates the interpolation of the
           variable_electronic_specific_heat:
@@ -413,15 +410,7 @@ void FixTTMCascade::end_of_step(){
           T_electron[iz][iy][ix] =
             T_electron_old[iz][iy][ix] +
             inner_dt/(variable_electronic_specific_heat*electronic_density) *
-            (variable_electronic_thermal_conductivity *
-
-             ((T_electron_old[iz][iy][ix-1] + T_electron_old[iz][iy][ix+1] -
-               2.0*T_electron_old[iz][iy][ix])*dxinv*dxinv +
-              (T_electron_old[iz][iy-1][ix] + T_electron_old[iz][iy+1][ix] -
-               2.0*T_electron_old[iz][iy][ix])*dyinv*dyinv +
-              (T_electron_old[iz-1][iy][ix] + T_electron_old[iz+1][iy][ix] -
-               2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv) -
-
+            (heat_flux_gradient(ix, iy, iz, dxinv, dyinv, dzinv) -
              net_energy_transfer[iz][iy][ix]/volgrid);
         }
 
@@ -1083,6 +1072,10 @@ double FixTTMCascade::linearinterpolation(double temp, const std::string &keywor
   return y_vals[lo] + (temp - temp_vals[lo]) * (dy_vals[lo] / dtemp_vals[lo]);
 }
 
+/* ----------------------------------------------------------------------
+   performs the numerical integration of the specific heat
+------------------------------------------------------------------------- */
+
 double FixTTMCascade::integrated_ce(double Te) {
   if (!cetable_active) {
     return electronic_specific_heat * Te;
@@ -1114,4 +1107,41 @@ double FixTTMCascade::integrated_ce(double Te) {
 
   return ce_integral_values[lo] +
          0.5 * (ce_values[lo] + Ce_interpolated) * (Te - temp_ce_values[lo]);
+}
+
+/* ----------------------------------------------------------------------
+   computes the heat flux gradient according to the type of thermal conductivity.
+   constant ke: k \nabla^2 T
+   variable ke: \nabla * q, where q = k * \nabla T
+------------------------------------------------------------------------- */
+
+double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv,
+                       double dzinv) {
+  
+  double heat_flux_gradient, variable_electronic_thermal_conductivity;
+
+  if (!ketable_active) {
+
+    heat_flux_gradient = electronic_thermal_conductivity * ((T_electron_old[iz][iy][ix-1] + T_electron_old[iz][iy][ix+1] -
+               2.0*T_electron_old[iz][iy][ix])*dxinv*dxinv +
+              (T_electron_old[iz][iy-1][ix] + T_electron_old[iz][iy+1][ix] -
+               2.0*T_electron_old[iz][iy][ix])*dyinv*dyinv +
+              (T_electron_old[iz-1][iy][ix] + T_electron_old[iz+1][iy][ix] -
+               2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);
+
+    return heat_flux_gradient;           
+  }                      
+
+  else {
+
+    variable_electronic_thermal_conductivity = linearinterpolation(T_electron_old[iz][iy][ix], "ke");
+
+    heat_flux_gradient = variable_electronic_thermal_conductivity * ((T_electron_old[iz][iy][ix-1] + T_electron_old[iz][iy][ix+1] -
+               2.0*T_electron_old[iz][iy][ix])*dxinv*dxinv +
+              (T_electron_old[iz][iy-1][ix] + T_electron_old[iz][iy+1][ix] -
+               2.0*T_electron_old[iz][iy][ix])*dyinv*dyinv +
+              (T_electron_old[iz-1][iy][ix] + T_electron_old[iz+1][iy][ix] -
+               2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);   
+    return heat_flux_gradient;            
+  }  
 }

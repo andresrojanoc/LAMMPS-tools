@@ -79,8 +79,8 @@ protected:
   double time_offset;
   double gamma_cutoff, gamma_offset;
   double average_electronic_temperature;
-  double variable_electronic_specific_heat,
-      variable_electronic_thermal_conductivity;
+  // double variable_electronic_specific_heat,
+  //     variable_electronic_thermal_conductivity;
 
   // Tabular Specific Heat data
   std::vector<double> temp_ce_values;
@@ -104,6 +104,10 @@ protected:
                          const std::string &keyword);
   double linearinterpolation(double temp, const std::string &keyword);
   double integrated_ce(double temp);
+
+  // Flux gradient method
+  double heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv,
+                            double dzinv);
 };
 
 } // namespace LAMMPS_NS
