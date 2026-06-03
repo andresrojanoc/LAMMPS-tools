@@ -79,8 +79,9 @@ protected:
   double time_offset;
   double gamma_cutoff, gamma_offset;
   double average_electronic_temperature;
-  // double variable_electronic_specific_heat,
-  //     variable_electronic_thermal_conductivity;
+  double ***conductivity_xface;
+  double ***conductivity_yface;
+  double ***conductivity_zface;
 
   // Tabular Specific Heat data
   std::vector<double> temp_ce_values;

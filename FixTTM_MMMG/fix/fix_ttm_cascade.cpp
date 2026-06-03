@@ -385,6 +385,45 @@ void FixTTMCascade::end_of_step(){
     memcpy(&T_electron_old[nzlo_out][nylo_out][nxlo_out],
            &T_electron[nzlo_out][nylo_out][nxlo_out],ngridout*sizeof(double));
 
+  // store thermal conductivity in a grid for rapid access           
+
+  if(ketable_active){
+
+    memset(&conductivity_xface[nzlo_out][nylo_out][nxlo_out],0, ngridout*sizeof(double));
+    memset(&conductivity_yface[nzlo_out][nylo_out][nxlo_out],0, ngridout*sizeof(double));
+    memset(&conductivity_zface[nzlo_out][nylo_out][nxlo_out],0, ngridout*sizeof(double));
+
+    // x faces
+
+    for (iz = nzlo_out; iz <= nzhi_out; iz++)
+      for (iy = nylo_out; iy <= nyhi_out; iy++)
+        for (ix = nxlo_out; ix < nxhi_out; ix++){
+          conductivity_xface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz][iy][ix+1])/2.0, "ke");
+          if(conductivity_xface[iz][iy][ix]<=0) 
+            error->all(FLERR,"Fix ttm/cascade: invalid conductivity at x-face ({},{},{}) value={}",ix, iy, iz,conductivity_xface[iz][iy][ix]);
+        }
+
+    // y faces
+
+    for (iz = nzlo_out; iz <= nzhi_out; iz++)
+      for (iy = nylo_out; iy < nyhi_out; iy++)
+        for (ix = nxlo_out; ix <= nxhi_out; ix++){
+          conductivity_yface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz][iy+1][ix])/2.0, "ke");
+          if(conductivity_yface[iz][iy][ix]<=0) 
+            error->all(FLERR,"Fix ttm/cascade: invalid conductivity at y-face ({},{},{}) value={}",ix, iy, iz,conductivity_yface[iz][iy][ix]);
+        }
+
+    // z faces
+
+    for (iz = nzlo_out; iz < nzhi_out; iz++)
+      for (iy = nylo_out; iy <= nyhi_out; iy++)
+        for (ix = nxlo_out; ix <= nxhi_out; ix++){
+          conductivity_zface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz+1][iy][ix])/2.0, "ke");
+          if(conductivity_zface[iz][iy][ix]<=0) 
+            error->all(FLERR,"Fix ttm/cascade: invalid conductivity at z-face ({},{},{}) value={}",ix, iy, iz,conductivity_zface[iz][iy][ix]);
+        }
+  }
+
     // compute new electron T profile
 
     for (iz = nzlo_in; iz <= nzhi_in; iz++)
@@ -829,6 +868,12 @@ void FixTTMCascade::allocate_grid()
                           "ttm/cascade:T_electron");
   memory->create3d_offset(net_energy_transfer, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
                           nxhi_out, "ttm/cascade:net_energy_transfer");
+  memory->create3d_offset(conductivity_xface, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
+                          nxhi_out, "ttm/cascade:conductivity_xface");
+  memory->create3d_offset(conductivity_yface, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
+                          nxhi_out, "ttm/cascade:conductivity_yface");
+  memory->create3d_offset(conductivity_zface, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
+                          nxhi_out, "ttm/cascade:conductivity_zface");
 }
 
 /* ----------------------------------------------------------------------
@@ -844,6 +889,10 @@ void FixTTMCascade::deallocate_grid()
   memory->destroy3d_offset(T_electron_old, nzlo_out, nylo_out, nxlo_out);
   memory->destroy3d_offset(T_electron, nzlo_out, nylo_out, nxlo_out);
   memory->destroy3d_offset(net_energy_transfer, nzlo_out, nylo_out, nxlo_out);
+  memory->destroy3d_offset(conductivity_xface, nzlo_out, nylo_out, nxlo_out);
+  memory->destroy3d_offset(conductivity_yface, nzlo_out, nylo_out, nxlo_out);
+  memory->destroy3d_offset(conductivity_zface, nzlo_out, nylo_out, nxlo_out);
+
 }
 
 /* ----------------------------------------------------------------------
@@ -1118,7 +1167,7 @@ double FixTTMCascade::integrated_ce(double Te) {
 double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv,
                        double dzinv) {
   
-  double heat_flux_gradient, variable_electronic_thermal_conductivity;
+  double heat_flux_gradient;
 
   if (!ketable_active) {
 
@@ -1134,14 +1183,14 @@ double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, d
 
   else {
 
-    variable_electronic_thermal_conductivity = linearinterpolation(T_electron_old[iz][iy][ix], "ke");
+    heat_flux_gradient = 
+              (conductivity_xface[iz][iy][ix] * (T_electron_old[iz][iy][ix+1] - T_electron_old[iz][iy][ix]) // dq/dx
+              + conductivity_xface[iz][iy][ix-1] * (T_electron_old[iz][iy][ix-1] - T_electron_old[iz][iy][ix]))*dxinv*dxinv
+              + (conductivity_yface[iz][iy][ix] * (T_electron_old[iz][iy+1][ix] - T_electron_old[iz][iy][ix]) // dq/dy
+              + conductivity_yface[iz][iy-1][ix] * (T_electron_old[iz][iy-1][ix] - T_electron_old[iz][iy][ix]))*dyinv*dyinv
+              + (conductivity_zface[iz][iy][ix] * (T_electron_old[iz+1][iy][ix] - T_electron_old[iz][iy][ix]) // dq/dz
+              + conductivity_zface[iz-1][iy][ix] * (T_electron_old[iz-1][iy][ix] - T_electron_old[iz][iy][ix]))*dzinv*dzinv;
 
-    heat_flux_gradient = variable_electronic_thermal_conductivity * ((T_electron_old[iz][iy][ix-1] + T_electron_old[iz][iy][ix+1] -
-               2.0*T_electron_old[iz][iy][ix])*dxinv*dxinv +
-              (T_electron_old[iz][iy-1][ix] + T_electron_old[iz][iy+1][ix] -
-               2.0*T_electron_old[iz][iy][ix])*dyinv*dyinv +
-              (T_electron_old[iz-1][iy][ix] + T_electron_old[iz+1][iy][ix] -
-               2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);   
     return heat_flux_gradient;            
   }  
 }
