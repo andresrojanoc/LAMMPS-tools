@@ -79,14 +79,16 @@ protected:
   double time_offset;
   double gamma_cutoff, gamma_offset;
   double average_electronic_temperature;
-  double variable_electronic_specific_heat,
-      variable_electronic_thermal_conductivity;
+  double ***conductivity_xface;
+  double ***conductivity_yface;
+  double ***conductivity_zface;
 
   // Tabular Specific Heat data
   std::vector<double> temp_ce_values;
   std::vector<double> ce_values;
   std::vector<double> dtemp_ce_values;
   std::vector<double> dce_values;
+  std::vector<double> ce_integral_values;
 
   // Tabular Thermal Conductivity data
   std::vector<double> temp_ke_values;
@@ -102,6 +104,11 @@ protected:
   void tableinterpreader(const std::string &filename,
                          const std::string &keyword);
   double linearinterpolation(double temp, const std::string &keyword);
+  double integrated_ce(double temp);
+
+  // Flux gradient method
+  double heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv,
+                            double dzinv);
 };
 
 } // namespace LAMMPS_NS
