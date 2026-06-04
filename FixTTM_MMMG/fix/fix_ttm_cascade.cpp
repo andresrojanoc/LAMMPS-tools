@@ -338,6 +338,10 @@ void FixTTMCascade::end_of_step(){
   double volgrid = 1.0 / (dxinv*dyinv*dzinv);
 
   double variable_electronic_specific_heat;
+  double variable_electronic_thermal_conductivity;
+  double el_th_diffusivity;
+  double el_th_diffusivity_max = 0.0;
+  double el_th_diffusivity_global_max = 0.0;
 
   outflag = 0;
   memset(&net_energy_transfer[nzlo_out][nylo_out][nxlo_out],0,
@@ -365,18 +369,35 @@ void FixTTMCascade::end_of_step(){
   int num_inner_timesteps = 1;
   double inner_dt = update->dt;
 
+  if (cetable_active || ketable_active) {
+
+    for (iz = nzlo_in; iz <= nzhi_in; iz++)
+      for (iy = nylo_in; iy <= nyhi_in; iy++)
+        for (ix = nxlo_in; ix <= nxhi_in; ix++) {
+          variable_electronic_specific_heat = cetable_active ? linearinterpolation(T_electron[iz][iy][ix], "ce") : electronic_specific_heat;
+          variable_electronic_thermal_conductivity = ketable_active ? linearinterpolation(T_electron[iz][iy][ix], "ke") : electronic_thermal_conductivity;
+          el_th_diffusivity = variable_electronic_thermal_conductivity/(variable_electronic_specific_heat*electronic_density);
+          if (el_th_diffusivity > el_th_diffusivity_max) el_th_diffusivity_max = el_th_diffusivity;
+        }
+    MPI_Allreduce(&el_th_diffusivity_max, &el_th_diffusivity_global_max, 1, MPI_DOUBLE, MPI_MAX, world);    
+  }
+  
+
+  else {
+    el_th_diffusivity_global_max = electronic_thermal_conductivity/(electronic_specific_heat*electronic_density);
+  }
+
   double stability_criterion = 1.0 -
-    2.0*inner_dt/(electronic_specific_heat*electronic_density) *
-    (electronic_thermal_conductivity*(dxinv*dxinv + dyinv*dyinv + dzinv*dzinv));
+    2.0*inner_dt* el_th_diffusivity_global_max * (dxinv*dxinv + dyinv*dyinv + dzinv*dzinv);
 
   if (stability_criterion < 0.0) {
-    inner_dt = 0.5*(electronic_specific_heat*electronic_density) /
-      (electronic_thermal_conductivity*(dxinv*dxinv + dyinv*dyinv + dzinv*dzinv));
+    inner_dt = 0.5/ el_th_diffusivity_global_max / (dxinv*dxinv + dyinv*dyinv + dzinv*dzinv);
     num_inner_timesteps = static_cast<int>(update->dt/inner_dt) + 1;
     inner_dt = update->dt/double(num_inner_timesteps);
     if (num_inner_timesteps > 1000000)
       error->warning(FLERR,"Too many inner timesteps in fix ttm/cascade");
   }
+
 
   // finite difference iterations to update T_electron
 
