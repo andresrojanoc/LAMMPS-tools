@@ -75,10 +75,7 @@ private:
 
 protected:
   bool cutoff_active, offset_active, cetable_active, ketable_active;
-  bool set_active, infile_active;
   double time_offset;
-  double gamma_cutoff, gamma_offset;
-  double average_electronic_temperature;
   double ***conductivity_xface;
   double ***conductivity_yface;
   double ***conductivity_zface;

@@ -51,15 +51,13 @@ static constexpr int OFFSET = 16384;
 FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg)
     : FixTTM(lmp, 13,
              arg) // 13 is to pass only 13 arguments to the parent class
-                  // (FixTTMGrid and FixTTM), and avoid keyword arguments.
+                  // (FixTTM), and avoid keyword arguments.
 {
   cutoff_active = false;
   offset_active = false;
   cetable_active = false;
   ketable_active = false;
-  set_active = infile_active = false;
   tinit = 0.0;
-  average_electronic_temperature = 0.0;
 
   pergrid_flag = 1;
   pergrid_freq = 1;
@@ -71,68 +69,54 @@ FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg)
   while (iarg < narg) {
     if (strcmp(arg[iarg], "set") == 0) {
       if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal fix ttm_mmmg command");
+        error->all(FLERR, "Illegal fix ttm/cascade command");
       tinit = utils::numeric(FLERR, arg[iarg + 1], false, lmp);
-      set_active = true;
       if (tinit <= 0.0)
-        error->all(FLERR, "Fix ttm_mmmg initial temperature must be > 0.0");
+        error->all(FLERR, "Fix ttm/cascade initial temperature must be > 0.0");
       iarg += 2;
     } else if (strcmp(arg[iarg], "infile") == 0) {
       if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal fix ttm_mmmg command");
+        error->all(FLERR, "Illegal fix ttm/cascade command");
       infile = arg[iarg + 1];
-      infile_active = true;
       iarg += 2;
     } else if (strcmp(arg[iarg], "cutoff") == 0) {
       if (iarg + 1 > narg)
-        error->all(FLERR, "Illegal fix ttm_mmmg command");
+        error->all(FLERR, "Illegal fix ttm/cascade command");
       cutoff_active = true;
       iarg += 1;
     } else if (strcmp(arg[iarg], "offset") == 0) {
       if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal fix ttm_mmmg command");
+        error->all(FLERR, "Illegal fix ttm/cascade command");
       offset_active = true;
       time_offset = utils::numeric(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg], "cetab") == 0) {
       if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal fix ttm_mmmg command");
+        error->all(FLERR, "Illegal fix ttm/cascade command");
       cetable_active = true;
       tableinterpreader(arg[iarg + 1], "ce");
       iarg += 2;
     } else if (strcmp(arg[iarg], "ketab") == 0) {
       if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal fix ttm_mmmg command");
+        error->all(FLERR, "Illegal fix ttm/cascade command");
       ketable_active = true;
       tableinterpreader(arg[iarg + 1], "ke");
       iarg += 2;
     } else {
-      error->all(FLERR, "Illegal fix ttm_mmmg command");
+      error->all(FLERR, "Illegal fix ttm/cascade command");
     }
-  }
-
-  // If the cetable is activated, set the electronic_specific_heat value.
-  if (cetable_active && set_active) {
-    electronic_specific_heat =
-        linearinterpolation(tinit, "ce"); // To check stability_criterion
-  }
-
-  // If the ketable is activated, set the electronic_thermal_conductivity value.
-  if (ketable_active && set_active) {
-    electronic_thermal_conductivity =
-        linearinterpolation(tinit, "ke"); // To check stability_criterion
   }
 
   // error check
   if (seed <= 0)
-    error->all(FLERR, "Invalid random number seed in fix ttm_mmmg command");
+    error->all(FLERR, "Invalid random number seed in fix ttm/cascade command");
   if (electronic_specific_heat <= 0.0)
-    error->all(FLERR, "Fix ttm_mmmg electronic_specific_heat must be > 0.0");
+    error->all(FLERR, "Fix ttm/cascade electronic_specific_heat must be > 0.0");
 
   if (cetable_active) {
     for (int i = 0; i < ce_values.size(); i++) {
       if (ce_values[i] <= 0.0)
-        error->all(FLERR, "Fix ttm_mmmg all electronic_specific_heat entries "
+        error->all(FLERR, "Fix ttm/cascade all electronic_specific_heat entries "
                           "in the file must be > 0.0");
     }
   }
@@ -140,34 +124,34 @@ FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg)
   if (ketable_active) {
     for (int i = 0; i < ke_values.size(); i++) {
       if (ke_values[i] <= 0.0)
-        error->all(FLERR, "Fix ttm_mmmg all electronic_thermal_conductivity "
+        error->all(FLERR, "Fix ttm/cascade all electronic_thermal_conductivity "
                           "entries in the file must be > 0.0");
     }
   }
 
   if (offset_active) {
     if (time_offset < 0)
-      error->all(FLERR, "Fix ttm_mmmg offset must be >= 0");
+      error->all(FLERR, "Fix ttm/cascade time_offset must be >= 0");
   }
 
   if (offset_active && cutoff_active)
     error->all(
         FLERR,
-        "Fix ttm_mmmg cannot have cutoff and offset active at the same time");
+        "Fix ttm/cascade cannot have cutoff and offset active at the same time");
 
   if (electronic_density <= 0.0)
-    error->all(FLERR, "Fix ttm_mmmg electronic_density must be > 0.0");
+    error->all(FLERR, "Fix ttm/cascade electronic_density must be > 0.0");
   if (electronic_thermal_conductivity < 0.0)
     error->all(FLERR,
-               "Fix ttm_mmmg electronic_thermal_conductivity must be >= 0.0");
+               "Fix ttm/cascade electronic_thermal_conductivity must be >= 0.0");
   if (gamma_p <= 0.0)
-    error->all(FLERR, "Fix ttm_mmmg gamma_p must be > 0.0");
+    error->all(FLERR, "Fix ttm/cascade gamma_p must be > 0.0");
   if (gamma_s < 0.0)
-    error->all(FLERR, "Fix ttm_mmmg gamma_s must be >= 0.0");
+    error->all(FLERR, "Fix ttm/cascade gamma_s must be >= 0.0");
   if (v_0 < 0.0)
-    error->all(FLERR, "Fix ttm_mmmg v_0 must be >= 0.0");
+    error->all(FLERR, "Fix ttm/cascade v_0 must be >= 0.0");
   if (nxgrid <= 0 || nygrid <= 0 || nzgrid <= 0)
-    error->all(FLERR, "Fix ttm_mmmg grid sizes must be > 0");
+    error->all(FLERR, "Fix ttm/cascade grid sizes must be > 0");
 
   if (outfile.size() > 0)
     error->all(FLERR, Error::NOPOINTER,
@@ -234,7 +218,7 @@ void FixTTMCascade::init()
 void FixTTMCascade::post_force(int /*vflag*/)
 {
   int ix,iy,iz;
-  double gamma1,gamma2;
+  double gamma1,gamma2,gamma_cutoff,gamma_offset;
 
   double **x = atom->x;
   double **v = atom->v;
@@ -379,9 +363,9 @@ void FixTTMCascade::end_of_step(){
           el_th_diffusivity = variable_electronic_thermal_conductivity/(variable_electronic_specific_heat*electronic_density);
           if (el_th_diffusivity > el_th_diffusivity_max) el_th_diffusivity_max = el_th_diffusivity;
         }
-    MPI_Allreduce(&el_th_diffusivity_max, &el_th_diffusivity_global_max, 1, MPI_DOUBLE, MPI_MAX, world);    
+    MPI_Allreduce(&el_th_diffusivity_max, &el_th_diffusivity_global_max, 1, MPI_DOUBLE, MPI_MAX, world);
   }
-  
+
 
   else {
     el_th_diffusivity_global_max = electronic_thermal_conductivity/(electronic_specific_heat*electronic_density);
@@ -398,7 +382,6 @@ void FixTTMCascade::end_of_step(){
       error->warning(FLERR,"Too many inner timesteps in fix ttm/cascade");
   }
 
-
   // finite difference iterations to update T_electron
 
   for (int istep = 0; istep < num_inner_timesteps; istep++) {
@@ -406,7 +389,7 @@ void FixTTMCascade::end_of_step(){
     memcpy(&T_electron_old[nzlo_out][nylo_out][nxlo_out],
            &T_electron[nzlo_out][nylo_out][nxlo_out],ngridout*sizeof(double));
 
-  // store thermal conductivity in a grid for rapid access           
+  // store thermal conductivity in a grid for rapid access
 
   if(ketable_active){
 
@@ -420,7 +403,7 @@ void FixTTMCascade::end_of_step(){
       for (iy = nylo_out; iy <= nyhi_out; iy++)
         for (ix = nxlo_out; ix < nxhi_out; ix++){
           conductivity_xface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz][iy][ix+1])/2.0, "ke");
-          if(conductivity_xface[iz][iy][ix]<=0) 
+          if(conductivity_xface[iz][iy][ix]<=0)
             error->all(FLERR,"Fix ttm/cascade: invalid conductivity at x-face ({},{},{}) value={}",ix, iy, iz,conductivity_xface[iz][iy][ix]);
         }
 
@@ -430,7 +413,7 @@ void FixTTMCascade::end_of_step(){
       for (iy = nylo_out; iy < nyhi_out; iy++)
         for (ix = nxlo_out; ix <= nxhi_out; ix++){
           conductivity_yface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz][iy+1][ix])/2.0, "ke");
-          if(conductivity_yface[iz][iy][ix]<=0) 
+          if(conductivity_yface[iz][iy][ix]<=0)
             error->all(FLERR,"Fix ttm/cascade: invalid conductivity at y-face ({},{},{}) value={}",ix, iy, iz,conductivity_yface[iz][iy][ix]);
         }
 
@@ -440,7 +423,7 @@ void FixTTMCascade::end_of_step(){
       for (iy = nylo_out; iy <= nyhi_out; iy++)
         for (ix = nxlo_out; ix <= nxhi_out; ix++){
           conductivity_zface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz+1][iy][ix])/2.0, "ke");
-          if(conductivity_zface[iz][iy][ix]<=0) 
+          if(conductivity_zface[iz][iy][ix]<=0)
             error->all(FLERR,"Fix ttm/cascade: invalid conductivity at z-face ({},{},{}) value={}",ix, iy, iz,conductivity_zface[iz][iy][ix]);
         }
   }
@@ -450,12 +433,12 @@ void FixTTMCascade::end_of_step(){
     for (iz = nzlo_in; iz <= nzhi_in; iz++)
       for (iy = nylo_in; iy <= nyhi_in; iy++)
         for (ix = nxlo_in; ix <= nxhi_in; ix++) {
-          variable_electronic_specific_heat =
-              cetable_active ? linearinterpolation(T_electron_old[iz][iy][ix], "ce")
-                             : electronic_specific_heat;                             
+          variable_electronic_specific_heat = cetable_active ? linearinterpolation(T_electron_old[iz][iy][ix], "ce") : electronic_specific_heat;
+
           /*
-          // Debug: Evaluates the interpolation of the
-          variable_electronic_specific_heat:
+          // Debug: Evaluates the interpolation of the variable_electronic_specific_heat:
+
+            variable_electronic_thermal_conductivity = ketable_active ? linearinterpolation(T_electron_old[iz][iy][ix], "ke") : electronic_thermal_conductivity;
 
             if (comm->me == 0 && update->ntimestep % 10 == 0 && ix == 0 &&
                 iy == 0 && iz == 0) {
@@ -466,6 +449,7 @@ void FixTTMCascade::end_of_step(){
                                    variable_electronic_thermal_conductivity));
             }
           */
+
 
           T_electron[iz][iy][ix] =
             T_electron_old[iz][iy][ix] +
@@ -508,36 +492,16 @@ void FixTTMCascade::read_electron_temperatures(const std::string &filename)
   // check completeness of input data
 
   int flag = 0;
-  double sum = 0.0;
   for (int iz = nzlo_in; iz <= nzhi_in; iz++)
     for (int iy = nylo_in; iy <= nyhi_in; iy++)
-      for (int ix = nxlo_in; ix <= nxhi_in; ix++) {
+      for (int ix = nxlo_in; ix <= nxhi_in; ix++)
         if (T_electron_read[iz][iy][ix] == 0) flag = 1;
-        sum += T_electron[iz][iy][ix];
-      }
 
   int flagall;
   MPI_Allreduce(&flag, &flagall, 1, MPI_INT, MPI_SUM, world);
   if (flagall) error->all(FLERR, "Fix ttm/cascade infile did not set all temperatures");
 
   memory->destroy3d_offset(T_electron_read, nzlo_in, nylo_in, nxlo_in);
-
-  double global_sum;
-  MPI_Allreduce(&sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, world);
-  average_electronic_temperature = global_sum / ngridtotal;
-
-  if (cetable_active)
-    electronic_specific_heat = linearinterpolation(
-        average_electronic_temperature, "ce"); // To check stability_criterion
-
-  if (ketable_active)
-    electronic_thermal_conductivity = linearinterpolation(
-        average_electronic_temperature, "ke"); // To check stability_criterion
-
-  MPI_Bcast(&average_electronic_temperature, 1, MPI_DOUBLE, 0, world);
-  MPI_Bcast(&electronic_specific_heat, 1, MPI_DOUBLE, 0, world);
-  MPI_Bcast(&electronic_thermal_conductivity, 1, MPI_DOUBLE, 0, world);
-
 }
 
 /* ----------------------------------------------------------------------
@@ -1187,7 +1151,7 @@ double FixTTMCascade::integrated_ce(double Te) {
 
 double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv,
                        double dzinv) {
-  
+
   double heat_flux_gradient;
 
   if (!ketable_active) {
@@ -1199,12 +1163,12 @@ double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, d
               (T_electron_old[iz-1][iy][ix] + T_electron_old[iz+1][iy][ix] -
                2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);
 
-    return heat_flux_gradient;           
-  }                      
+    return heat_flux_gradient;
+  }
 
   else {
 
-    heat_flux_gradient = 
+    heat_flux_gradient =
               (conductivity_xface[iz][iy][ix] * (T_electron_old[iz][iy][ix+1] - T_electron_old[iz][iy][ix]) // dq/dx
               + conductivity_xface[iz][iy][ix-1] * (T_electron_old[iz][iy][ix-1] - T_electron_old[iz][iy][ix]))*dxinv*dxinv
               + (conductivity_yface[iz][iy][ix] * (T_electron_old[iz][iy+1][ix] - T_electron_old[iz][iy][ix]) // dq/dy
@@ -1212,6 +1176,6 @@ double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, d
               + (conductivity_zface[iz][iy][ix] * (T_electron_old[iz+1][iy][ix] - T_electron_old[iz][iy][ix]) // dq/dz
               + conductivity_zface[iz-1][iy][ix] * (T_electron_old[iz-1][iy][ix] - T_electron_old[iz][iy][ix]))*dzinv*dzinv;
 
-    return heat_flux_gradient;            
-  }  
+    return heat_flux_gradient;
+  }
 }
