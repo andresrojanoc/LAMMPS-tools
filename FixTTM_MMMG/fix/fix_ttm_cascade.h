@@ -76,9 +76,7 @@ private:
 protected:
   bool cutoff_active, offset_active, cetable_active, ketable_active;
   double time_offset;
-  double ***conductivity_xface;
-  double ***conductivity_yface;
-  double ***conductivity_zface;
+  double ***thermal_conductivity_grid;
 
   // Tabular Specific Heat data
   std::vector<double> temp_ce_values;

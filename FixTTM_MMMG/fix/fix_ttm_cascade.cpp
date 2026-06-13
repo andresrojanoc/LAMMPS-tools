@@ -393,40 +393,16 @@ void FixTTMCascade::end_of_step(){
 
   if(ketable_active){
 
-    memset(&conductivity_xface[nzlo_out][nylo_out][nxlo_out],0, ngridout*sizeof(double));
-    memset(&conductivity_yface[nzlo_out][nylo_out][nxlo_out],0, ngridout*sizeof(double));
-    memset(&conductivity_zface[nzlo_out][nylo_out][nxlo_out],0, ngridout*sizeof(double));
-
-    // x faces
+    memset(&thermal_conductivity_grid[nzlo_out][nylo_out][nxlo_out],0, ngridout*sizeof(double));
 
     for (iz = nzlo_out; iz <= nzhi_out; iz++)
       for (iy = nylo_out; iy <= nyhi_out; iy++)
-        for (ix = nxlo_out; ix < nxhi_out; ix++){
-          conductivity_xface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz][iy][ix+1])/2.0, "ke");
-          if(conductivity_xface[iz][iy][ix]<=0)
-            error->all(FLERR,"Fix ttm/cascade: invalid conductivity at x-face ({},{},{}) value={}",ix, iy, iz,conductivity_xface[iz][iy][ix]);
-        }
-
-    // y faces
-
-    for (iz = nzlo_out; iz <= nzhi_out; iz++)
-      for (iy = nylo_out; iy < nyhi_out; iy++)
         for (ix = nxlo_out; ix <= nxhi_out; ix++){
-          conductivity_yface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz][iy+1][ix])/2.0, "ke");
-          if(conductivity_yface[iz][iy][ix]<=0)
-            error->all(FLERR,"Fix ttm/cascade: invalid conductivity at y-face ({},{},{}) value={}",ix, iy, iz,conductivity_yface[iz][iy][ix]);
+          thermal_conductivity_grid[iz][iy][ix] = linearinterpolation(T_electron_old[iz][iy][ix], "ke");
         }
 
-    // z faces
-
-    for (iz = nzlo_out; iz < nzhi_out; iz++)
-      for (iy = nylo_out; iy <= nyhi_out; iy++)
-        for (ix = nxlo_out; ix <= nxhi_out; ix++){
-          conductivity_zface[iz][iy][ix] = linearinterpolation((T_electron_old[iz][iy][ix]+T_electron_old[iz+1][iy][ix])/2.0, "ke");
-          if(conductivity_zface[iz][iy][ix]<=0)
-            error->all(FLERR,"Fix ttm/cascade: invalid conductivity at z-face ({},{},{}) value={}",ix, iy, iz,conductivity_zface[iz][iy][ix]);
-        }
   }
+
 
     // compute new electron T profile
 
@@ -853,12 +829,8 @@ void FixTTMCascade::allocate_grid()
                           "ttm/cascade:T_electron");
   memory->create3d_offset(net_energy_transfer, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
                           nxhi_out, "ttm/cascade:net_energy_transfer");
-  memory->create3d_offset(conductivity_xface, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
-                          nxhi_out, "ttm/cascade:conductivity_xface");
-  memory->create3d_offset(conductivity_yface, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
-                          nxhi_out, "ttm/cascade:conductivity_yface");
-  memory->create3d_offset(conductivity_zface, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
-                          nxhi_out, "ttm/cascade:conductivity_zface");
+  memory->create3d_offset(thermal_conductivity_grid, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out,
+                          nxhi_out, "ttm/cascade:thermal_conductivity_grid");
 }
 
 /* ----------------------------------------------------------------------
@@ -874,10 +846,7 @@ void FixTTMCascade::deallocate_grid()
   memory->destroy3d_offset(T_electron_old, nzlo_out, nylo_out, nxlo_out);
   memory->destroy3d_offset(T_electron, nzlo_out, nylo_out, nxlo_out);
   memory->destroy3d_offset(net_energy_transfer, nzlo_out, nylo_out, nxlo_out);
-  memory->destroy3d_offset(conductivity_xface, nzlo_out, nylo_out, nxlo_out);
-  memory->destroy3d_offset(conductivity_yface, nzlo_out, nylo_out, nxlo_out);
-  memory->destroy3d_offset(conductivity_zface, nzlo_out, nylo_out, nxlo_out);
-
+  memory->destroy3d_offset(thermal_conductivity_grid, nzlo_out, nylo_out, nxlo_out);
 }
 
 /* ----------------------------------------------------------------------
@@ -1146,7 +1115,7 @@ double FixTTMCascade::integrated_ce(double Te) {
 /* ----------------------------------------------------------------------
    computes the heat flux gradient according to the type of thermal conductivity.
    constant ke: k \nabla^2 T
-   variable ke: \nabla * q, where q = k * \nabla T
+   variable ke: k \nabla^2 T + \nabla k \nabla T
 ------------------------------------------------------------------------- */
 
 double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv,
@@ -1164,17 +1133,31 @@ double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, d
                2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);
 
     return heat_flux_gradient;
+
   }
+
 
   else {
 
-    heat_flux_gradient =
-              (conductivity_xface[iz][iy][ix] * (T_electron_old[iz][iy][ix+1] - T_electron_old[iz][iy][ix]) // dq/dx
-              + conductivity_xface[iz][iy][ix-1] * (T_electron_old[iz][iy][ix-1] - T_electron_old[iz][iy][ix]))*dxinv*dxinv
-              + (conductivity_yface[iz][iy][ix] * (T_electron_old[iz][iy+1][ix] - T_electron_old[iz][iy][ix]) // dq/dy
-              + conductivity_yface[iz][iy-1][ix] * (T_electron_old[iz][iy-1][ix] - T_electron_old[iz][iy][ix]))*dyinv*dyinv
-              + (conductivity_zface[iz][iy][ix] * (T_electron_old[iz+1][iy][ix] - T_electron_old[iz][iy][ix]) // dq/dz
-              + conductivity_zface[iz-1][iy][ix] * (T_electron_old[iz-1][iy][ix] - T_electron_old[iz][iy][ix]))*dzinv*dzinv;
+    heat_flux_gradient = thermal_conductivity_grid[iz][iy][ix] * ((T_electron_old[iz][iy][ix-1] + T_electron_old[iz][iy][ix+1] -
+            2.0*T_electron_old[iz][iy][ix])*dxinv*dxinv +
+          (T_electron_old[iz][iy-1][ix] + T_electron_old[iz][iy+1][ix] -
+            2.0*T_electron_old[iz][iy][ix])*dyinv*dyinv +
+          (T_electron_old[iz-1][iy][ix] + T_electron_old[iz+1][iy][ix] -
+            2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);    
+
+    heat_flux_gradient +=
+
+    (thermal_conductivity_grid[iz][iy][ix+1] - // \nabla k_x \nabla T_x
+    thermal_conductivity_grid[iz][iy][ix-1])/2.0*dxinv *
+    (T_electron_old[iz][iy][ix+1] - T_electron_old[iz][iy][ix-1])/2.0*dxinv +
+    (thermal_conductivity_grid[iz][iy+1][ix] - // \nabla k_y \nabla T_y
+    thermal_conductivity_grid[iz][iy-1][ix])/2.0*dyinv *
+    (T_electron_old[iz][iy+1][ix] - T_electron_old[iz][iy-1][ix])/2.0*dyinv +  
+    (thermal_conductivity_grid[iz+1][iy][ix] - // \nabla k_z \nabla T_z
+    thermal_conductivity_grid[iz-1][iy][ix])/2.0*dzinv *
+    (T_electron_old[iz+1][iy][ix] - T_electron_old[iz-1][iy][ix])/2.0*dzinv;
+
 
     return heat_flux_gradient;
   }
