@@ -20,12 +20,12 @@ FixStyle(ttm/cascade,FixTTMCascade);
 #ifndef LMP_FIX_TTM_CASCADE_H
 #define LMP_FIX_TTM_CASCADE_H
 
-#include "fix_ttm_grid.h"
+#include "fix_ttm.h"
 
 namespace LAMMPS_NS {
 
 class FixTTMCascade : public FixTTM {
-public:
+ public:
   FixTTMCascade(class LAMMPS *, int, char **);
   ~FixTTMCascade() override;
   void post_constructor() override;
@@ -57,7 +57,7 @@ public:
   int get_griddata_by_name(int, const std::string &, int &) override;
   void *get_griddata_by_index(int) override;
 
-private:
+ private:
   int ngridown, ngridout;
   int nxlo_in, nxhi_in, nylo_in, nyhi_in, nzlo_in, nzhi_in;
   int nxlo_out, nxhi_out, nylo_out, nyhi_out, nzlo_out, nzhi_out;
@@ -73,19 +73,19 @@ private:
   double ***T_electron_read;
   int nxlo_out_previous, nylo_out_previous, nzlo_out_previous;
 
-protected:
+ protected:
   bool cutoff_active, offset_active, cetable_active, ketable_active;
   double time_offset;
   double ***thermal_conductivity_grid;
 
-  // Tabular Specific Heat data
+  // tabular specific heat data
   std::vector<double> temp_ce_values;
   std::vector<double> ce_values;
   std::vector<double> dtemp_ce_values;
   std::vector<double> dce_values;
   std::vector<double> ce_integral_values;
 
-  // Tabular Thermal Conductivity data
+  // tabular thermal conductivity data
   std::vector<double> temp_ke_values;
   std::vector<double> ke_values;
   std::vector<double> dtemp_ke_values;
@@ -95,18 +95,15 @@ protected:
   void deallocate_grid() override;
   void read_electron_temperatures(const std::string &) override;
 
-  // Internal Logic Methods
-  void tableinterpreader(const std::string &filename,
-                         const std::string &keyword);
+  void tableinterpreader(const std::string &filename, const std::string &keyword);
   double linearinterpolation(double temp, const std::string &keyword);
   double integrated_ce(double temp);
 
-  // Flux gradient method
-  double heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv,
-                            double dzinv);
+  // heat flux gradient
+  double heat_flux_gradient(int ix, int iy, int iz, double dxinv, double dyinv, double dzinv);
 };
 
-} // namespace LAMMPS_NS
+}    // namespace LAMMPS_NS
 
 #endif
 #endif

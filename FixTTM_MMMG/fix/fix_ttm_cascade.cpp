@@ -13,8 +13,14 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Paul Crozier (SNL)
+   Contributing authors: Original fix ttm
+                         Paul Crozier (SNL)
                          Carolyn Phillips (University of Michigan)
+
+                         ttm/cascade
+                         Andrés Rojano (Lancaster University)
+                         Samuel T. Murphy (Lancaster University)
+
 ------------------------------------------------------------------------- */
 
 #include "fix_ttm_cascade.h"
@@ -49,9 +55,7 @@ static constexpr int OFFSET = 16384;
 /* ---------------------------------------------------------------------- */
 
 FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg)
-    : FixTTM(lmp, 13,
-             arg) // 13 is to pass only 13 arguments to the parent class
-                  // (FixTTM), and avoid keyword arguments.
+    : FixTTM(lmp, 13, arg) // 13 is to pass non-keyword arguments to FixTTM
 {
   cutoff_active = false;
   offset_active = false;
@@ -63,8 +67,7 @@ FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg)
   pergrid_freq = 1;
   restart_file = 1;
 
-  // Parsing all keywords,  standard (set and infile) and custom (cutoff,
-  // offset, cetab, ketab).
+  // parsing all keywords, standard (set and infile) and custom (cutoff, offset, cetab, and ketab)
   int iarg = 13;
   while (iarg < narg) {
     if (strcmp(arg[iarg], "set") == 0) {
@@ -108,6 +111,7 @@ FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg)
   }
 
   // error check
+
   if (seed <= 0)
     error->all(FLERR, "Invalid random number seed in fix ttm/cascade command");
   if (electronic_specific_heat <= 0.0)
@@ -154,8 +158,7 @@ FixTTMCascade::FixTTMCascade(LAMMPS *lmp, int narg, char **arg)
     error->all(FLERR, "Fix ttm/cascade grid sizes must be > 0");
 
   if (outfile.size() > 0)
-    error->all(FLERR, Error::NOPOINTER,
-               "Fix ttm/cascade does not support outfile option - "
+    error->all(FLERR, Error::NOPOINTER, "Fix ttm/cascade does not support outfile option - "
                "use dump grid command or restart files instead");
 
   skin_original = neighbor->skin;
@@ -237,18 +240,8 @@ void FixTTMCascade::post_force(int /*vflag*/)
   int flag = 0;
 
   update->update_time();
-  double current_time = update->atime; // This is to look for the current time.
+  double current_time = update->atime; // look for the current time
   gamma_offset = (offset_active && (current_time < time_offset)) ? 0 : 1;
-
-  /*
-  // Debug: Evaluates current simulation time
-
-  if (comm->me == 0) {
-    utils::logmesg(
-        lmp, fmt::format("DEBUG: Time = {}, time_offset {}, gamma_offset = {}
-  \n", update->atime, time_offset, gamma_offset));
-  }
-  */
 
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
@@ -258,7 +251,8 @@ void FixTTMCascade::post_force(int /*vflag*/)
 
       // flag if ix,iy,iz is not within my ghost cell range
 
-      if (ix < nxlo_out || ix > nxhi_out || iy < nylo_out || iy > nyhi_out ||
+      if (ix < nxlo_out || ix > nxhi_out ||
+          iy < nylo_out || iy > nyhi_out ||
           iz < nzlo_out || iz > nzhi_out) {
         flag = 1;
         continue;
@@ -268,29 +262,27 @@ void FixTTMCascade::post_force(int /*vflag*/)
         error->one(FLERR,"Electronic temperature dropped below zero");
 
       double tsqrt = sqrt(T_electron[iz][iy][ix]);
+
       gamma1 = gfactor1[type[i]];
       double vsq = v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2];
 
       gamma_cutoff = 1.0;
 
-      // Evaluates whether the cutoff approach applies in the computation.
+      // evaluates whether the cutoff approach applies in the computation
       if (vsq > v_0_sq) {
         if (cutoff_active) {
           gamma1 *=
-              (gamma_s / gamma_p); // Avoids gamma_p for fast-moving atoms.
+              (gamma_s / gamma_p); // avoids gamma_p for fast-moving atoms
           gamma_cutoff = 0;
         } else {
           gamma1 *= ((gamma_p * gamma_offset) + gamma_s) /
-                    gamma_p; // Standard ttm approach.
+                    gamma_p; // standard ttm approach
         }
-      } else {                  // vsq <= v_0_sq
-        gamma1 *= gamma_offset; // This decouples gamma_p for slow-moving atoms
-                                // when time_offset applies.
+      } else {
+        gamma1 *= gamma_offset; // decouples gamma_p when time_offset applies
       }
 
-      gamma2 = gfactor2[type[i]] * tsqrt * gamma_cutoff * gamma_offset;
-      // Modifies gamma2 to disable stochastic forces for fast-moving atoms and
-      // at simulation times before time_offset.
+      gamma2 = gfactor2[type[i]] * tsqrt * gamma_cutoff * gamma_offset; // modifies gamma2 to disable stochastic forces if needed
 
       flangevin[i][0] = gamma1*v[i][0] + gamma2*(random->uniform()-0.5);
       flangevin[i][1] = gamma1*v[i][1] + gamma2*(random->uniform()-0.5);
@@ -411,22 +403,6 @@ void FixTTMCascade::end_of_step(){
         for (ix = nxlo_in; ix <= nxhi_in; ix++) {
           variable_electronic_specific_heat = cetable_active ? linearinterpolation(T_electron_old[iz][iy][ix], "ce") : electronic_specific_heat;
 
-          /*
-          // Debug: Evaluates the interpolation of the variable_electronic_specific_heat:
-
-            variable_electronic_thermal_conductivity = ketable_active ? linearinterpolation(T_electron_old[iz][iy][ix], "ke") : electronic_thermal_conductivity;
-
-            if (comm->me == 0 && update->ntimestep % 10 == 0 && ix == 0 &&
-                iy == 0 && iz == 0) {
-              utils::logmesg(
-                  lmp, fmt::format("DEBUG: Step {} | T={} K | ce={} | ke={}\n",
-                                   update->ntimestep, T_electron[0][0][0],
-                                   variable_electronic_specific_heat,
-                                   variable_electronic_thermal_conductivity));
-            }
-          */
-
-
           T_electron[iz][iy][ix] =
             T_electron_old[iz][iy][ix] +
             inner_dt/(variable_electronic_specific_heat*electronic_density) *
@@ -456,8 +432,7 @@ void FixTTMCascade::read_electron_temperatures(const std::string &filename)
   SafeFilePtr fp;
   if (comm->me == 0) {
     fp = utils::open_potential(filename, lmp, nullptr);
-    if (!fp) error->one(FLERR, "Cannot open grid file: {}: {}", filename,
-                 utils::getsyserror());
+    if (!fp) error->one(FLERR, "Cannot open grid file: {}: {}", filename, utils::getsyserror());
   }
 
   // read the file
@@ -917,7 +892,8 @@ void *FixTTMCascade::get_griddata_by_index(int index)
    or the net_energy transfer between the subsystems
 ------------------------------------------------------------------------- */
 
-double FixTTMCascade::compute_vector(int n) {
+double FixTTMCascade::compute_vector(int n)
+{
   int ix, iy, iz;
 
   if (outflag == 0) {
@@ -932,9 +908,8 @@ double FixTTMCascade::compute_vector(int n) {
     for (iz = nzlo_in; iz <= nzhi_in; iz++)
       for (iy = nylo_in; iy <= nyhi_in; iy++)
         for (ix = nxlo_in; ix <= nxhi_in; ix++) {
-
-          e_energy_me += integrated_ce(T_electron[iz][iy][ix]) *
-                         electronic_density * volgrid;
+          e_energy_me +=
+              integrated_ce(T_electron[iz][iy][ix]) * electronic_density * volgrid;
           transfer_energy_me += net_energy_transfer[iz][iy][ix] * update->dt;
         }
 
@@ -988,7 +963,6 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
       }
     }
 
-    // Pre-calculate deltas
     int nsize_table = static_cast<int>(temp_vals.size());
     dtemp_vals.resize(nsize_table);
     dy_vals.resize(nsize_table);
@@ -1000,7 +974,6 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
       dtemp_vals[i] = temp_vals[i + 1] - temp_vals[i];
       dy_vals[i] = y_vals[i + 1] - y_vals[i];
       if (keyword == "ce") {
-        // numerical integration
         ce_integral_values[i + 1] = ce_integral_values[i] + 0.5 * (y_vals[i + 1] + y_vals[i]) * (temp_vals[i + 1] - temp_vals[i]);
       }
       if (temp_vals[i] >= temp_vals[i + 1]) table_flag = true;
@@ -1057,10 +1030,8 @@ double FixTTMCascade::linearinterpolation(double temp, const std::string &keywor
   int hi = static_cast<int>(temp_vals.size()) - 1;
 
   if (temp <= temp_vals[lo])
-    // Exact match or lower than lower bound
     return y_vals[lo];
   if (temp >= temp_vals[hi])
-    // Exact match or higher than upper bound
     return y_vals[hi];
 
   while (hi - lo > 1) {
@@ -1071,7 +1042,6 @@ double FixTTMCascade::linearinterpolation(double temp, const std::string &keywor
       lo = mid;
   }
 
-  // Use pre-calculated deltas
   return y_vals[lo] + (temp - temp_vals[lo]) * (dy_vals[lo] / dtemp_vals[lo]);
 }
 
@@ -1089,13 +1059,10 @@ double FixTTMCascade::integrated_ce(double Te) {
   int mid;
 
   if (Te <= temp_ce_values[lo])
-    // Exact match or lower than lower bound
     return ce_values[lo] * Te;
   if (Te >= temp_ce_values[hi])
-    // Exact match or higher than upper bound
     return ce_integral_values[hi] + (ce_values[hi] * (Te - temp_ce_values[hi]));
 
-  // Look for fraction
   while (hi - lo > 1) {
     mid = (lo + hi) / 2;
     if (Te < temp_ce_values[mid])
@@ -1144,17 +1111,17 @@ double FixTTMCascade::heat_flux_gradient(int ix, int iy, int iz, double dxinv, d
           (T_electron_old[iz][iy-1][ix] + T_electron_old[iz][iy+1][ix] -
             2.0*T_electron_old[iz][iy][ix])*dyinv*dyinv +
           (T_electron_old[iz-1][iy][ix] + T_electron_old[iz+1][iy][ix] -
-            2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);    
+            2.0*T_electron_old[iz][iy][ix])*dzinv*dzinv);
 
     heat_flux_gradient +=
 
-    (thermal_conductivity_grid[iz][iy][ix+1] - // \nabla k_x \nabla T_x
+    (thermal_conductivity_grid[iz][iy][ix+1] -
     thermal_conductivity_grid[iz][iy][ix-1])/2.0*dxinv *
     (T_electron_old[iz][iy][ix+1] - T_electron_old[iz][iy][ix-1])/2.0*dxinv +
-    (thermal_conductivity_grid[iz][iy+1][ix] - // \nabla k_y \nabla T_y
+    (thermal_conductivity_grid[iz][iy+1][ix] -
     thermal_conductivity_grid[iz][iy-1][ix])/2.0*dyinv *
-    (T_electron_old[iz][iy+1][ix] - T_electron_old[iz][iy-1][ix])/2.0*dyinv +  
-    (thermal_conductivity_grid[iz+1][iy][ix] - // \nabla k_z \nabla T_z
+    (T_electron_old[iz][iy+1][ix] - T_electron_old[iz][iy-1][ix])/2.0*dyinv +
+    (thermal_conductivity_grid[iz+1][iy][ix] -
     thermal_conductivity_grid[iz-1][iy][ix])/2.0*dzinv *
     (T_electron_old[iz+1][iy][ix] - T_electron_old[iz-1][iy][ix])/2.0*dzinv;
 
