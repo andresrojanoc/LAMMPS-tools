@@ -464,7 +464,7 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
   std::vector<double> &y_vals = (keyword == "ce") ? ce_values : ke_values;
   std::vector<double> &dy_vals = (keyword == "ce") ? dce_values : dke_values;
 
-  bool table_flag = false;
+  int table_count = 0;
 
   if (comm->me == 0) {
     std::string table_label = (keyword == "ce") ? "specific heat table"
@@ -491,7 +491,7 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
       if (keyword == "ce") {
         ce_integral_values[i + 1] = ce_integral_values[i] + 0.5 * (y_vals[i + 1] + y_vals[i]) * (temp_vals[i + 1] - temp_vals[i]);
       }
-      if (temp_vals[i] >= temp_vals[i + 1]) table_flag = true;
+      if (temp_vals[i] >= temp_vals[i + 1]) table_count += 1;
     }
   }
 
@@ -512,12 +512,12 @@ void FixTTMCascade::tableinterpreader(const std::string &filename,
   MPI_Bcast(y_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
   MPI_Bcast(dtemp_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
   MPI_Bcast(dy_vals.data(), nsize_table, MPI_DOUBLE, 0, world);
-  MPI_Bcast(&table_flag, 1, MPI_C_BOOL, 0, world);
+  MPI_Bcast(&table_count, 1, MPI_INT, 0, world);
   if (keyword == "ce") MPI_Bcast(ce_integral_values.data(), nsize_table, MPI_DOUBLE, 0, world);
 
   // error check
 
-  if (table_flag) error->all(FLERR, "Two consecutive values in the {} table are the same or not sorted", keyword);
+  if (table_count) error->all(FLERR, "There are {} non-increasing temperature intervals in the {} table", table_count, keyword);
 
   if (temp_vals.size() < 2) error->all(FLERR, "The {} table has less than 2 rows, interpolation is invalid", keyword);
 
